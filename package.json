@@ -1,0 +1,24 @@
+{
+    "name": "ollama-editor",
+    "version": "1.0.0",
+    "description": "A VS Code-like code editor built with Electron",
+    "main": "src/main/index.js",
+    "scripts": {
+        "start": "electron .",
+        "dev": "electron . --dev"
+    },
+    "keywords": [
+        "editor",
+        "code",
+        "electron",
+        "vscode"
+    ],
+    "author": "OllamaEditor",
+    "license": "MIT",
+    "devDependencies": {
+        "electron": "^28.0.0"
+    },
+    "dependencies": {
+        "monaco-editor": "^0.45.0"
+    }
+}

@@ -85,6 +85,12 @@ export const EditorProvider = ({ children }) => {
                 e.preventDefault();
                 if (activeFile) closeFile(activeFile);
             }
+            // AI Chat: Ctrl+Shift+I
+            else if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+                e.preventDefault();
+                setActivePanel('ai-chat');
+                setSidebarVisible(true);
+            }
         };
 
         window.addEventListener('keydown', handleKeyDown);

@@ -1,0 +1,321 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Custom Scrollbar - VS Code style */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #4f4f4f;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Monaco editor overrides */
+.monaco-editor {
+    --vscode-editor-background: #1e1e1e !important;
+}
+
+.monaco-editor .margin {
+    background-color: #1e1e1e !important;
+}
+
+/* Selection colors */
+::selection {
+    background-color: #264f78;
+    color: #ffffff;
+}
+
+/* Focus outlines */
+*:focus {
+    outline: none;
+}
+
+button:focus-visible,
+input:focus-visible {
+    outline: 1px solid #007fd4;
+    outline-offset: -1px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.15s ease-out;
+}
+
+.animate-slide-down {
+    animation: slideDown 0.15s ease-out;
+}
+
+.animate-slide-up {
+    animation: slideUp 0.15s ease-out;
+}
+
+/* Terminal styles */
+.terminal-cursor {
+    animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+/* Resize handle */
+.resize-handle {
+    position: absolute;
+    background: transparent;
+    z-index: 10;
+}
+
+.resize-handle:hover {
+    background: #007fd4;
+}
+
+.resize-handle-horizontal {
+    top: 0;
+    width: 4px;
+    height: 100%;
+    cursor: ew-resize;
+}
+
+.resize-handle-vertical {
+    left: 0;
+    height: 4px;
+    width: 100%;
+    cursor: ns-resize;
+}
+
+/* Dropdown menu animation */
+.dropdown-menu {
+    animation: slideDown 0.1s ease-out;
+}
+
+/* Tooltip */
+.tooltip {
+    position: relative;
+}
+
+.tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 8px;
+    padding: 4px 8px;
+    background: #252526;
+    border: 1px solid #454545;
+    border-radius: 3px;
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+}
+
+.tooltip:hover::after {
+    opacity: 1;
+}
+
+/* Panel transitions */
+.panel-enter {
+    animation: slideUp 0.15s ease-out;
+}
+
+.panel-exit {
+    animation: slideDown 0.15s ease-out reverse;
+}
+
+/* Activity bar active indicator */
+.activity-indicator {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ffffff;
+}
+
+/* Tab active indicator */
+.tab-active-indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #007acc;
+}
+
+/* Code highlighting in search results */
+.search-match {
+    background-color: #613214;
+    border: 1px solid #f38518;
+    border-radius: 2px;
+}
+
+/* Git diff colors */
+.diff-added {
+    background-color: rgba(40, 167, 69, 0.15);
+}
+
+.diff-removed {
+    background-color: rgba(220, 53, 69, 0.15);
+}
+
+.diff-modified {
+    background-color: rgba(0, 123, 255, 0.15);
+}
+
+/* Welcome screen */
+.welcome-shortcut {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    background: #2d2d2d;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: 'Segoe UI', monospace;
+    color: #9d9d9d;
+}
+
+/* Loading spinner */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #3c3c3c;
+    border-top-color: #007acc;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Drag and drop overlay */
+.drop-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 122, 204, 0.1);
+    border: 2px dashed #007acc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+/* Input placeholder color */
+input::placeholder {
+    color: #6e6e6e;
+}
+
+/* Link styles */
+a {
+    color: #3794ff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Button variants */
+.btn-primary {
+    background: #0e639c;
+    color: white;
+    padding: 6px 14px;
+    border-radius: 2px;
+    font-size: 13px;
+    transition: background 0.1s;
+}
+
+.btn-primary:hover {
+    background: #1177bb;
+}
+
+.btn-secondary {
+    background: #3c3c3c;
+    color: #cccccc;
+    padding: 6px 14px;
+    border-radius: 2px;
+    font-size: 13px;
+    transition: background 0.1s;
+}
+
+.btn-secondary:hover {
+    background: #505050;
+}

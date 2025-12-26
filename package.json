@@ -4,8 +4,11 @@
     "description": "A VS Code-like code editor built with Electron",
     "main": "src/main/index.js",
     "scripts": {
-        "start": "electron .",
-        "dev": "electron . --dev"
+        "start": "npx electron .",
+        "dev": "concurrently -k \"npx vite\" \"npx wait-on http://localhost:5173 && npx electron . --dev\"",
+        "dev:vite": "npx vite",
+        "dev:electron": "npx electron . --dev",
+        "build": "npx vite build"
     },
     "keywords": [
         "editor",
@@ -16,9 +19,26 @@
     "author": "OllamaEditor",
     "license": "MIT",
     "devDependencies": {
-        "electron": "^28.0.0"
+        "@tailwindcss/postcss": "^4.1.17",
+        "@vitejs/plugin-react": "^5.1.2",
+        "autoprefixer": "^10.4.22",
+        "concurrently": "^9.2.1",
+        "electron": "^27.0.0",
+        "postcss": "^8.5.6",
+        "tailwindcss": "^4.1.17",
+        "vite": "^7.2.7",
+        "wait-on": "^9.0.3"
     },
     "dependencies": {
-        "monaco-editor": "^0.45.0"
+        "@monaco-editor/react": "^4.7.0",
+        "@xterm/addon-fit": "^0.11.0",
+        "@xterm/xterm": "^6.0.0",
+        "clsx": "^2.1.1",
+        "lucide-react": "^0.559.0",
+        "monaco-editor": "^0.45.0",
+        "react": "^19.2.1",
+        "react-dom": "^19.2.1",
+        "tailwind-merge": "^3.4.0",
+        "xterm": "^5.3.0"
     }
 }

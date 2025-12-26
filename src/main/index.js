@@ -1,4 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const electron = require('electron');
+console.log('Electron module:', electron);
+console.log('ipcMain:', electron.ipcMain);
+console.log('app:', electron.app);
+
+const { app, BrowserWindow, ipcMain, dialog, Menu } = electron;
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -22,11 +27,14 @@ function createWindow() {
         icon: path.join(__dirname, '../../assets/icon.png')
     });
 
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-
-    // Open DevTools in development
+    // Dev mode (Vite) vs Production (File)
     if (process.argv.includes('--dev')) {
+        // Wait a brief moment for Vite to start? Or just load.
+        // It's better to just load, user can refresh if needed.
+        mainWindow.loadURL('http://localhost:5173');
         mainWindow.webContents.openDevTools();
+    } else {
+        mainWindow.loadFile(path.join(__dirname, '../../dist/renderer/index.html'));
     }
 
     mainWindow.on('maximize', () => {

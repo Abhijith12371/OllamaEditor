@@ -1,15 +1,22 @@
 const electron = require('electron');
-console.log('Electron module:', electron);
-console.log('ipcMain:', electron.ipcMain);
-console.log('app:', electron.app);
-
 const { app, BrowserWindow, ipcMain, dialog, Menu } = electron;
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Try to load node-pty for real terminal support
+let pty;
+try {
+    pty = require('node-pty');
+    console.log('node-pty loaded successfully');
+} catch (e) {
+    console.warn('node-pty not available, terminal will be limited:', e.message);
+}
+
 let mainWindow;
 let currentFolder = null;
+const terminals = new Map(); // Store active terminal processes
+let terminalIdCounter = 0;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -29,8 +36,6 @@ function createWindow() {
 
     // Dev mode (Vite) vs Production (File)
     if (process.argv.includes('--dev')) {
-        // Wait a brief moment for Vite to start? Or just load.
-        // It's better to just load, user can refresh if needed.
         mainWindow.loadURL('http://localhost:5173');
         mainWindow.webContents.openDevTools();
     } else {
@@ -43,6 +48,14 @@ function createWindow() {
 
     mainWindow.on('unmaximize', () => {
         mainWindow.webContents.send('window-maximized', false);
+    });
+
+    // Clean up terminals on window close
+    mainWindow.on('closed', () => {
+        terminals.forEach((term) => {
+            try { term.kill(); } catch (e) { }
+        });
+        terminals.clear();
     });
 }
 
@@ -67,7 +80,88 @@ ipcMain.handle('window-is-maximized', () => {
     return mainWindow.isMaximized();
 });
 
-// File system handlers
+// ============= TERMINAL HANDLERS =============
+
+// Create a new terminal process
+ipcMain.handle('terminal-create', async (event, cwd) => {
+    if (!pty) {
+        return { success: false, error: 'node-pty not available' };
+    }
+
+    const id = ++terminalIdCounter;
+    const shell = process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash';
+    const workingDir = cwd || currentFolder || os.homedir();
+
+    try {
+        const term = pty.spawn(shell, [], {
+            name: 'xterm-256color',
+            cols: 120,
+            rows: 30,
+            cwd: workingDir,
+            env: process.env,
+            useConpty: false // Disable ConPTY to avoid AttachConsole error
+        });
+
+        terminals.set(id, term);
+
+        // Forward terminal output to renderer
+        term.onData((data) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('terminal-data', { id, data });
+            }
+        });
+
+        term.onExit(({ exitCode }) => {
+            terminals.delete(id);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('terminal-exit', { id, exitCode });
+            }
+        });
+
+        return { success: true, id, cwd: workingDir };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Write data to terminal
+ipcMain.handle('terminal-write', async (event, id, data) => {
+    const term = terminals.get(id);
+    if (term) {
+        term.write(data);
+        return { success: true };
+    }
+    return { success: false, error: 'Terminal not found' };
+});
+
+// Resize terminal
+ipcMain.handle('terminal-resize', async (event, id, cols, rows) => {
+    const term = terminals.get(id);
+    if (term) {
+        term.resize(cols, rows);
+        return { success: true };
+    }
+    return { success: false, error: 'Terminal not found' };
+});
+
+// Kill terminal
+ipcMain.handle('terminal-kill', async (event, id) => {
+    const term = terminals.get(id);
+    if (term) {
+        term.kill();
+        terminals.delete(id);
+        return { success: true };
+    }
+    return { success: false, error: 'Terminal not found' };
+});
+
+// Check if real terminal is available
+ipcMain.handle('terminal-available', async () => {
+    return { available: !!pty };
+});
+
+// ============= FILE SYSTEM HANDLERS =============
+
 ipcMain.handle('open-folder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openDirectory']
@@ -98,6 +192,10 @@ ipcMain.handle('read-file', async (event, filePath) => {
 
 ipcMain.handle('write-file', async (event, filePath, content) => {
     try {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
         fs.writeFileSync(filePath, content, 'utf-8');
         return { success: true };
     } catch (error) {
@@ -107,7 +205,15 @@ ipcMain.handle('write-file', async (event, filePath, content) => {
 
 ipcMain.handle('create-file', async (event, filePath) => {
     try {
-        fs.writeFileSync(filePath, '', 'utf-8');
+        // Create parent directories if they don't exist
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        // Only create if doesn't exist
+        if (!fs.existsSync(filePath)) {
+            fs.writeFileSync(filePath, '', 'utf-8');
+        }
         return { success: true };
     } catch (error) {
         return { success: false, error: error.message };
@@ -168,6 +274,10 @@ async function getDirectoryTree(dirPath, depth = 0, maxDepth = 10) {
 
     const items = [];
     try {
+        if (!fs.existsSync(dirPath)) {
+            console.warn(`Directory does not exist: ${dirPath}`);
+            return [];
+        }
         const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
         // Sort: folders first, then files, both alphabetically
@@ -345,7 +455,7 @@ function createMenu() {
                             type: 'info',
                             title: 'About OllamaEditor',
                             message: 'OllamaEditor v1.0.0',
-                            detail: 'A VS Code-like code editor built with Electron'
+                            detail: 'A VS Code-like code editor built with Electron and Ollama AI'
                         });
                     }
                 }
@@ -369,6 +479,12 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+    // Clean up all terminals
+    terminals.forEach((term) => {
+        try { term.kill(); } catch (e) { }
+    });
+    terminals.clear();
+
     if (process.platform !== 'darwin') {
         app.quit();
     }

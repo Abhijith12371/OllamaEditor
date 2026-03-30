@@ -16,6 +16,17 @@ export const EditorProvider = ({ children }) => {
     const [showCommandPalette, setShowCommandPalette] = useState(false);
     const [showQuickOpen, setShowQuickOpen] = useState(false);
     const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+    const [terminalOutput, setTerminalOutput] = useState(''); // Store terminal output for AI analysis
+    const [pendingCommand, setPendingCommand] = useState(null); // bridge for AI -> Terminal
+    const [agentStatus, setAgentStatus] = useState(null); // 'thinking', 'applying', 'executing', 'fixing', null
+    const [showPreview, setShowPreview] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState('http://localhost:5173');
+
+    const executeCommand = useCallback((command) => {
+        // Use an object with a unique ID so the same command can be re-run
+        // and TerminalPanel can always detect the change
+        setPendingCommand({ cmd: command, id: Date.now() });
+    }, []);
 
     // IPC Listeners
     useEffect(() => {
@@ -210,6 +221,16 @@ export const EditorProvider = ({ children }) => {
             setShowCommandPalette,
             setShowQuickOpen,
             setCursorPosition,
+            terminalOutput,
+            setTerminalOutput,
+            pendingCommand,
+            executeCommand,
+            agentStatus,
+            setAgentStatus,
+            showPreview,
+            setShowPreview,
+            previewUrl,
+            setPreviewUrl,
             handleOpenFolder,
             openFile,
             closeFile,

@@ -19,7 +19,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     renameItem: (oldPath, newPath) => ipcRenderer.invoke('rename-item', oldPath, newPath),
     searchInFiles: (folderPath, searchText) => ipcRenderer.invoke('search-in-files', folderPath, searchText),
 
-    // Terminal
+    // Terminal - Real PTY support
+    terminalAvailable: () => ipcRenderer.invoke('terminal-available'),
+    terminalCreate: (cwd) => ipcRenderer.invoke('terminal-create', cwd),
+    terminalWrite: (id, data) => ipcRenderer.invoke('terminal-write', id, data),
+    terminalResize: (id, cols, rows) => ipcRenderer.invoke('terminal-resize', id, cols, rows),
+    terminalKill: (id) => ipcRenderer.invoke('terminal-kill', id),
+    onTerminalData: (callback) => {
+        const handler = (event, data) => callback(data);
+        ipcRenderer.on('terminal-data', handler);
+        return () => ipcRenderer.removeListener('terminal-data', handler);
+    },
+    onTerminalExit: (callback) => {
+        const handler = (event, data) => callback(data);
+        ipcRenderer.on('terminal-exit', handler);
+        return () => ipcRenderer.removeListener('terminal-exit', handler);
+    },
+
+    // Legacy terminal
     getShell: () => ipcRenderer.invoke('get-shell'),
     getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
 

@@ -7,6 +7,7 @@ import Breadcrumbs from './Breadcrumbs';
 import EditorArea from './EditorArea';
 import StatusBar from './StatusBar';
 import TerminalPanel from './TerminalPanel';
+import WebPreview from './WebPreview';
 import CommandPalette from './CommandPalette';
 import QuickOpen from './QuickOpen';
 import { useEditor } from '../contexts/EditorContext';
@@ -16,7 +17,8 @@ const Layout = () => {
         showCommandPalette,
         setShowCommandPalette,
         showQuickOpen,
-        setShowQuickOpen
+        setShowQuickOpen,
+        showPreview
     } = useEditor();
 
     return (
@@ -33,6 +35,7 @@ const Layout = () => {
                     <Breadcrumbs />
                     <EditorArea />
                 </div>
+                <WebPreview />
             </div>
 
             {/* Terminal Panel */}

@@ -12,7 +12,7 @@ const AIChat = () => {
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [model, setModel] = useState('MHKetbi/UIGEN-T1-Qwen-7B:latest');
+    const [model, setModel] = useState('qwen/qwen3.6-plus:free');
     const [copiedIndex, setCopiedIndex] = useState(null);
     const [creatingFiles, setCreatingFiles] = useState(false);
     const [createdFiles, setCreatedFiles] = useState([]);
@@ -191,7 +191,7 @@ const AIChat = () => {
         clean = clean.replace(/^(?:path\/to\/|project\/|workspace\/)/i, '');
         clean = clean.replace(/^[\\/]+/, '');
 
-        // 1. Try regex based on last command (fastest)
+        // 1. Try regex based on last command (fastest) - Skip @latest/@version variants
         const createCmdMatch = lastCommandRef.current && lastCommandRef.current.match(/(?:create-react-app|vite|next-app|init)(?:@[^\s]+)?\s+([a-zA-Z0-9_-]+)/i);
         let confirmedProjectRoot = createCmdMatch ? createCmdMatch[1] : null;
 
@@ -317,6 +317,7 @@ const AIChat = () => {
         const contentToSend = overrideContent || input;
         if ((!contentToSend.trim() && !attachedImage) || isLoading) return;
 
+        let actualContent = contentToSend;
         const imageForMessage = attachedImage;
         const userMessage = { role: 'user', content: contentToSend || '(image attached)', image: imageForMessage?.dataUrl };
         setMessages(prev => [...prev, userMessage]);
@@ -481,17 +482,51 @@ export default App;
 <|im_end|>`;
             }
 
-            // Use the UPDATED messages list including the one we just added
-            const chatHistory = [...messages, userMessage];
+            // ─── 2-STEP VISION PIPELINE (if image attached) ─────────────────
+            // If an image is attached, we ALWAYS use llava:latest to describe it first
+            if (imageForMessage) {
+                setAgentStatus('thinking');
+                const describeResponse = await fetch('http://localhost:11434/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'llava:latest',
+                        messages: [{
+                            role: 'user',
+                            content: `Describe this UI screenshot in extreme detail for a developer to recreate it. User instruction: ${actualContent}`,
+                            images: [imageForMessage.base64]
+                        }],
+                        options: { temperature: 0.1 },
+                        stream: false
+                    })
+                });
 
-            let content;
+                if (!describeResponse.ok) {
+                    throw new Error(`LLava error: ${describeResponse.status}`);
+                }
+                const describeData = await describeResponse.json();
+                const uiDescription = describeData.message?.content || '';
+
+                // Now replace the content with the description for the next AI step
+                actualContent = `The user wants to recreate/modify this UI. Here is a detailed description of the provided screenshot:\n\n${uiDescription}\n\nUser request: ${actualContent}\n\nWrite the complete React + Tailwind code to implement this now.`;
+                setAttachedImage(null); // Clear image after processing
+            }
+
+            const chatHistory = [...messages, { role: 'user', content: actualContent }];
+            let content = '';
+
+            // System prompt selection
+            let activeSystemPrompt = systemPrompt;
+            if (imageForMessage) {
+                activeSystemPrompt = `You are an expert React + Tailwind CSS developer. Recreate the UI described by the user. Use ONLY standard imports (react, lucide-react, framer-motion). Output FULL code in **File: \`App.jsx\`** format.`;
+            }
 
             // Route to different APIs based on model
             if (model.startsWith('gemini')) {
                 // Gemini API
-                const GEMINI_API_KEY = 'AIzaSyAxQr7-GZxrPxaZudC72qeHReZxvjrKFGg';
+                const GEMINI_API_KEY = 'AIzaSyD4GuU_Hh_uucFedw71Al-xVi8j_8-5ojY';
                 const geminiMessages = [
-                    { role: 'user', parts: [{ text: systemPrompt }] },
+                    { role: 'user', parts: [{ text: activeSystemPrompt }] },
                     { role: 'model', parts: [{ text: 'I understand. I am an autonomous coding agent and will follow these rules strictly.' }] },
                     ...chatHistory.filter(m => m.role !== 'system').slice(-20).map(m => ({
                         role: m.role === 'assistant' ? 'model' : 'user',
@@ -521,10 +556,10 @@ export default App;
 
                 const geminiData = await geminiResponse.json();
                 content = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
-            } else if (model.includes('/') && (model.startsWith('qwen/') || model.startsWith('openai/'))) {
-                const OPENROUTER_API_KEY = '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';
+            } else if (model.includes('/') || model.startsWith('openai/') || model.startsWith('anthropic/')) {
+                const OPENROUTER_API_KEY = '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';
                 const orMessages = [
-                    { role: 'system', content: systemPrompt },
+                    { role: 'system', content: activeSystemPrompt },
                     ...chatHistory.filter(m => m.role !== 'system')
                 ];
 
@@ -549,110 +584,33 @@ export default App;
                 const orData = await orResponse.json();
                 content = orData.choices?.[0]?.message?.content || 'Sorry, I could not generate a response from OpenRouter.';
             } else {
-                if (imageForMessage) {
-                    // ─── 2-STEP VISION PIPELINE ───────────────────────────────
-                    // Step 1: Ask llava to describe the image in detail
-                    setAgentStatus('thinking'); // show "working" indicator
-                    const describeResponse = await fetch('http://localhost:11434/api/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: 'llava:latest',
-                            messages: [{
-                                role: 'user',
-                                content: `Describe this UI screenshot in extreme detail. Include: layout structure, colors, fonts, spacing, all visible text, every component type (buttons, inputs, cards, navbars), icons, background, and the visual hierarchy. Be thorough — a developer will use your description to recreate this UI in code.\n\nUser instruction: ${contentToSend}`,
-                                images: [imageForMessage.base64]
-                            }],
-                            options: { temperature: 0.1 },
-                            stream: false
-                        })
-                    });
+                // Ollama API
+                const response = await fetch('http://localhost:11434/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            { role: 'system', content: activeSystemPrompt },
+                            ...chatHistory.filter(m => m.role !== 'system').slice(-20)
+                        ],
+                        options: {
+                            temperature: 0.1,
+                            top_p: 0.9,
+                            num_predict: 4096
+                        },
+                        stream: false
+                    })
+                });
 
-                    if (!describeResponse.ok) {
-                        let detail = `llava error: ${describeResponse.status}`;
-                        try { const j = await describeResponse.json(); if (j.error) detail = j.error; } catch (e) { }
-                        throw new Error(detail);
-                    }
-                    const describeData = await describeResponse.json();
-                    const uiDescription = describeData.message?.content || '';
+                if (!response.ok) {
+                    let errorDetail = `Status: ${response.status}`;
+                    try { const errorJson = await response.json(); if (errorJson.error) errorDetail = errorJson.error; } catch (e) { }
+                    throw new Error(errorDetail);
+                }
 
-                    // Step 2: Feed description to qwen2.5:7b-instruct for code generation
-                    const codeSystemPrompt = `You are an expert React + Tailwind CSS developer.
-You will receive a detailed description of a UI and must write the complete React code to recreate it.
-
-STRICT RULES:
-1. Output the FULL code immediately. Do NOT describe steps or explain.
-2. Use this EXACT format:
-**File: \`App.jsx\`**
-\`\`\`jsx
-...complete code...
-\`\`\`
-3. ONLY import from: react, react-dom, lucide-react, framer-motion. No other packages.
-4. Use Tailwind CSS classes for ALL styling.
-5. Make it pixel-perfect based on the description.
-6. Include all visible text, icons, colors, and layout.
-7. If no project exists, FIRST generate the code. If a project exists, update the App.jsx file in it.
-8. AT THE END, provide a **Run:** command to start the server if not already running (e.g., **Run: \`npm run dev -- --port 5174\`**).`;
-
-                    const codeResponse = await fetch('http://localhost:11434/api/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: 'qwen2.5:7b-instruct',
-                            messages: [
-                                { role: 'system', content: codeSystemPrompt },
-                                { role: 'user', content: `Here is the UI description:\n\n${uiDescription}\n\nUser instruction: ${contentToSend}\n\nWrite the complete React + Tailwind code now.` }
-                            ],
-                            options: { temperature: 0.1, num_predict: 4096 },
-                            stream: false
-                        })
-                    });
-
-                    if (!codeResponse.ok) {
-                        let detail = `qwen error: ${codeResponse.status}`;
-                        try { const j = await codeResponse.json(); if (j.error) detail = j.error; } catch (e) { }
-                        throw new Error(detail);
-                    }
-                    const codeData = await codeResponse.json();
-                    content = codeData.message?.content || 'Sorry, could not generate code.';
-                    setAgentStatus(null);
-
-                } else {
-                    // ─── NORMAL (NON-IMAGE) OLLAMA CALL ──────────────────────────
-                    const ollamaMessages = [
-                        { role: 'system', content: systemPrompt },
-                        ...chatHistory.filter(m => m.role !== 'system').slice(-20)
-                    ];
-
-                    const response = await fetch('http://localhost:11434/api/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: model,
-                            messages: ollamaMessages,
-                            options: {
-                                temperature: 0.1,
-                                top_p: 0.9,
-                                num_predict: 4096
-                            },
-                            stream: false
-                        })
-                    });
-
-                    if (!response.ok) {
-                        let errorDetail = `Status: ${response.status}`;
-                        try {
-                            const errorJson = await response.json();
-                            if (errorJson.error) errorDetail = errorJson.error;
-                        } catch (e) {
-                            // Fallback if not JSON
-                        }
-                        throw new Error(errorDetail);
-                    }
-
-                    const data = await response.json();
-                    content = data.message?.content || 'Sorry, I could not generate a response.';
-                } // end else (non-image)
+                const data = await response.json();
+                content = data.message?.content || 'Sorry, I could not generate a response.';
             }
 
             // Pre-process content for Qwen UIGEN or similar models that use <|im_start|>ui
@@ -1005,7 +963,7 @@ STRICT RULES:
                     }
                 }
 
-                // DETECT PROJECT CREATION
+                // DETECT PROJECT CREATION - Skip @latest/@version variants
                 let projectContextMsg = "";
                 const createMatch = lastCommandRef.current && lastCommandRef.current.match(/(?:create-react-app|vite|next-app|init)(?:@[^\s]+)?\s+([a-zA-Z0-9_-]+)/i);
                 if (createMatch) {
@@ -1225,17 +1183,12 @@ STRICT RULES:
                     <select
                         value={model}
                         onChange={(e) => setModel(e.target.value)}
-                        className="bg-[#3c3c3c] text-[#cccccc] text-[10px] rounded px-1.5 py-1 outline-none border border-transparent focus:border-[#007acc]"
+                        className="bg-zinc-800 text-xs text-zinc-300 border border-zinc-700 rounded px-2 py-1 outline-none focus:border-blue-500"
                     >
-                        <option value="gemini-1.5-pro">⚡ Gemini 1.5 Pro</option>
-                        <option value="gemini-1.5-flash">⚡ Gemini 1.5 Flash</option>
-                        <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash</option>
                         <option value="qwen/qwen3.6-plus:free">🌐 OpenRouter Qwen 3.6 Plus (Free)</option>
                         <option value="qwen/qwen3-coder:free">🌐 OpenRouter Qwen 3 Coder (Free)</option>
-                        <option value="MHKetbi/UIGEN-T1-Qwen-7B:latest">MHKetbi/UIGEN-T1-Qwen-7B:latest</option>
+                        <option value="qwen/qwen3-next-80b-a3b-instruct:free">🌐 OpenRouter Qwen 3 Next 80B (Free)</option>
                         <option value="llava:latest">llava:latest</option>
-                        <option value="qwen2.5:7b-instruct">qwen2.5:7b-instruct</option>
-                        <option value="deepseek-r1:7b">deepseek-r1:7b</option>
                     </select>
                     <button
                         className="p-1 hover:bg-[#3c3c3c] rounded"

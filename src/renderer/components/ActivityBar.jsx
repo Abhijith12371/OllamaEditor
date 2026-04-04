@@ -4,9 +4,14 @@ import { useEditor } from '../contexts/EditorContext';
 import clsx from 'clsx';
 
 const ActivityBar = () => {
-    const { activePanel, setActivePanel, sidebarVisible, setSidebarVisible } = useEditor();
+    const { activePanel, setActivePanel, sidebarVisible, setSidebarVisible, aiSidebarVisible, setAiSidebarVisible } = useEditor();
 
     const handleClick = (panel) => {
+        if (panel === 'ai-chat') {
+            setAiSidebarVisible(!aiSidebarVisible);
+            return;
+        }
+
         if (activePanel === panel && sidebarVisible) {
             setSidebarVisible(false);
         } else {
@@ -20,7 +25,7 @@ const ActivityBar = () => {
             <button
                 className={clsx(
                     "p-3 w-12 h-12 flex items-center justify-center transition-colors border-l-2",
-                    activePanel === panel && sidebarVisible
+                    (panel === 'ai-chat' ? aiSidebarVisible : (activePanel === panel && sidebarVisible))
                         ? "text-white border-white"
                         : "text-gray-500 hover:text-gray-300 border-transparent"
                 )}
@@ -40,7 +45,7 @@ const ActivityBar = () => {
                         </svg>
                         <Sparkles size={24} strokeWidth={1.5} className={clsx(
                             "absolute inset-0",
-                            activePanel === panel && sidebarVisible ? "text-purple-400" : "text-purple-500"
+                            aiSidebarVisible ? "text-purple-400" : "text-purple-500"
                         )} />
                     </div>
                 ) : (

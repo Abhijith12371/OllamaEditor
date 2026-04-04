@@ -7,7 +7,38 @@ import '@xterm/xterm/css/xterm.css';
 import clsx from 'clsx';
 
 const TerminalPanel = () => {
-    const { showTerminal, setShowTerminal, currentFolder, setTerminalOutput, setActivePanel, setSidebarVisible, pendingCommand } = useEditor();
+    const {
+        showTerminal,
+        setShowTerminal,
+        currentFolder,
+        setTerminalOutput,
+        setActivePanel,
+        setSidebarVisible,
+        pendingCommand,
+        terminalHeight,
+        setTerminalHeight
+    } = useEditor();
+
+    const handleResize = (e) => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const startHeight = terminalHeight;
+
+        const onMouseMove = (moveEvent) => {
+            const newHeight = Math.max(100, Math.min(600, startHeight - (moveEvent.clientY - startY)));
+            setTerminalHeight(newHeight);
+        };
+
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.body.style.cursor = 'default';
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        document.body.style.cursor = 'row-resize';
+    };
     const [terminals, setTerminals] = useState([]);
     const [activeTerminal, setActiveTerminal] = useState(null);
     const [isRealTerminal, setIsRealTerminal] = useState(false);
@@ -265,7 +296,7 @@ const TerminalPanel = () => {
         }
 
         return () => window.removeEventListener('resize', handleResize);
-    }, [showTerminal, activeTerminal]);
+    }, [showTerminal, activeTerminal, terminalHeight]);
 
     // Initialize xterm when active terminal changes
     useEffect(() => {
@@ -356,7 +387,15 @@ const TerminalPanel = () => {
     if (!showTerminal) return null;
 
     return (
-        <div className="h-64 bg-[#1e1e1e] border-t border-[#454545] flex flex-col shrink-0">
+        <div
+            className="bg-[#1e1e1e] border-t border-[#454545] flex flex-col shrink-0 relative"
+            style={{ height: terminalHeight }}
+        >
+            {/* Resize Handle */}
+            <div
+                className="absolute top-0 left-0 right-0 h-1 hover:bg-blue-500/50 cursor-row-resize z-30 transition-colors"
+                onMouseDown={handleResize}
+            />
             {/* Header */}
             <div className="h-9 bg-[#252526] flex items-center justify-between px-2 shrink-0 border-b border-[#1e1e1e]">
                 <div className="flex items-center gap-2">

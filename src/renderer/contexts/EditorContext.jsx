@@ -11,8 +11,12 @@ export const EditorProvider = ({ children }) => {
     const [activeFile, setActiveFile] = useState(null);
     const [activePanel, setActivePanel] = useState('explorer'); // 'explorer', 'search', 'source-control', 'run', 'extensions', 'settings'
     const [sidebarVisible, setSidebarVisible] = useState(true);
+    const [sidebarWidth, setSidebarWidth] = useState(260);
+    const [aiSidebarVisible, setAiSidebarVisible] = useState(true);
+    const [aiSidebarWidth, setAiSidebarWidth] = useState(380);
     const [statusMessage, setStatusMessage] = useState('Ready');
     const [showTerminal, setShowTerminal] = useState(false);
+    const [terminalHeight, setTerminalHeight] = useState(240);
     const [showCommandPalette, setShowCommandPalette] = useState(false);
     const [showQuickOpen, setShowQuickOpen] = useState(false);
     const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
@@ -219,15 +223,26 @@ export const EditorProvider = ({ children }) => {
             activeFile,
             activePanel,
             sidebarVisible,
+            setSidebarVisible,
+            sidebarWidth,
+            setSidebarWidth,
+            aiSidebarVisible,
+            setAiSidebarVisible,
+            aiSidebarWidth,
+            setAiSidebarWidth,
             statusMessage,
             showTerminal,
+            setShowTerminal,
+            terminalHeight,
+            setTerminalHeight,
             showCommandPalette,
+            setShowCommandPalette,
             showQuickOpen,
+            setShowQuickOpen,
             cursorPosition,
+            setCursorPosition,
             setFileTree,
             setActivePanel,
-            setSidebarVisible,
-            setShowTerminal,
             setShowCommandPalette,
             setShowQuickOpen,
             setCursorPosition,

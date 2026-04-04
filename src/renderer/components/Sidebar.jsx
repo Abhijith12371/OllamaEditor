@@ -6,7 +6,7 @@ import AIChat from './AIChat';
 import { GitBranch, Play, Puzzle, MoreHorizontal, Sparkles } from 'lucide-react';
 
 const Sidebar = () => {
-    const { activePanel, sidebarVisible } = useEditor();
+    const { activePanel, sidebarVisible, sidebarWidth } = useEditor();
 
     if (!sidebarVisible) return null;
 
@@ -14,7 +14,6 @@ const Sidebar = () => {
         switch (activePanel) {
             case 'explorer': return 'EXPLORER';
             case 'search': return 'SEARCH';
-            case 'ai-chat': return 'OLLAMA AI';
             case 'source-control': return 'SOURCE CONTROL';
             case 'run': return 'RUN AND DEBUG';
             case 'extensions': return 'EXTENSIONS';
@@ -45,8 +44,6 @@ const Sidebar = () => {
                 return <FileTree />;
             case 'search':
                 return <SearchSidebar />;
-            case 'ai-chat':
-                return <AIChat />;
             case 'source-control':
                 return (
                     <PlaceholderPanel
@@ -131,22 +128,20 @@ const Sidebar = () => {
         }
     };
 
-    // Make sidebar wider for AI Chat
-    const sidebarWidth = activePanel === 'ai-chat' ? 'w-96' : 'w-64';
-
     return (
-        <div className={`${sidebarWidth} bg-[#252526] flex flex-col border-r border-[#1e1e1e] shrink-0 transition-all duration-200`}>
-            {/* Header - hide for AI chat as it has its own */}
-            {activePanel !== 'ai-chat' && (
-                <div className="h-9 px-4 flex items-center justify-between text-xs text-[#bbbbbb] select-none shrink-0">
-                    <span className="font-bold uppercase tracking-wide">{getTitle()}</span>
-                    <div className="flex items-center gap-1">
-                        <button className="p-1 hover:bg-[#3c3c3c] rounded" title="More Actions">
-                            <MoreHorizontal size={14} />
-                        </button>
-                    </div>
+        <div
+            className="bg-[#252526] flex flex-col border-r border-[#1e1e1e] shrink-0 transition-all duration-200"
+            style={{ width: sidebarWidth }}
+        >
+            {/* Header */}
+            <div className="h-9 px-4 flex items-center justify-between text-xs text-[#bbbbbb] select-none shrink-0">
+                <span className="font-bold uppercase tracking-wide">{getTitle()}</span>
+                <div className="flex items-center gap-1">
+                    <button className="p-1 hover:bg-[#3c3c3c] rounded" title="More Actions">
+                        <MoreHorizontal size={14} />
+                    </button>
                 </div>
-            )}
+            </div>
 
             {/* Content */}
             <div className="flex-1 overflow-hidden flex flex-col">

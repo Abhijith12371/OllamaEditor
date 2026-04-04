@@ -379,9 +379,8 @@ ALLOWED PACKAGE VERSIONS (Use these if editing package.json):
 - react: ^18.2.0
 - react-dom: ^18.2.0
 - vite: ^5.0.0
-- tailwindcss: ^3.4.1 (NEVER use v2)
-- postcss: ^8.4.35
-- autoprefixer: ^10.4.17
+- tailwindcss: ^4.0.0
+- @tailwindcss/vite: ^4.0.0
 - framer-motion: ^11.0.0
 - lucide-react: ^0.344.0
 
@@ -389,7 +388,7 @@ CRITICAL RULES FOR PROJECT CREATION:
 
 STEP 1: SCAFFOLD ONLY
 - Run the create command ONLY. IMPORTANT: Replace <project-name> with a good, short name relevant to the user request. DO NOT name everything "todo-app"!
-  **Run: \`npm create vite@latest <project-name> -- --template react; cd <project-name>; npm install -D tailwindcss postcss autoprefixer; npx tailwindcss init -p; npm install; npm run dev -- --port 5174\`**
+  **Run: \`npm create vite@latest <project-name> -- --template react; cd <project-name>; npm install tailwindcss @tailwindcss/vite; npm install; npm run dev -- --port 5174\`**
 - IMPORTANT: You MUST \`cd\` into the project folder BEFORE running any \`npm\` or \`ls\` commands.
 - DO NOT provide any files in this step
 - Wait for the command to finish
@@ -397,8 +396,8 @@ STEP 1: SCAFFOLD ONLY
 STEP 2: MODIFY AFTER SUCCESS
 - Once the project is created, provide the modified files
 - IMPORTANT: If you created a subfolder, ALL file paths MUST start with that folder name!
-- **CRITICAL**: You MUST provide \`tailwind.config.js\` and \`src/index.css\` (with @tailwind directives) to enable styling.
-- Example: **File: \`<project-name>/src/App.jsx\`**, **File: \`<project-name>/tailwind.config.js\`**
+- **CRITICAL**: You MUST provide \`vite.config.js\` with the Tailwind plugin and \`src/index.css\` with \`@import "tailwindcss";\` to enable styling.
+- Example: **File: \`<project-name>/src/App.jsx\`**, **File: \`<project-name>/vite.config.js\`**
 
 FOR SIMPLE HTML/CSS/JS - CREATE FILES DIRECTLY:
 **File: \`index.html\`**
@@ -416,26 +415,31 @@ FORMAT RULES:
 EXAMPLE - React App (Step 1):
 "I'll scaffold the project using Vite and Tailwind CSS:
 
-**Run: \`npm create vite@latest user-auth-app -- --template react; cd user-auth-app; npm install -D tailwindcss postcss autoprefixer; npx tailwindcss init -p; npm install; npm run dev -- --port 5174\`**"
+**Run: \`npm create vite@latest user-auth-app -- --template react; cd user-auth-app; npm install tailwindcss @tailwindcss/vite; npm install; npm run dev -- --port 5174\`**"
 
 EXAMPLE - React App (Step 2):
-"Now updating the App component and Tailwind config:
+"Now updating the App component and Vite config for Tailwind v4:
 
-**File: \`user-auth-app/tailwind.config.js\`**
+**File: \`user-auth-app/vite.config.js\`**
 \`\`\`javascript
-/** @type {import('tailwindcss').Config} */
-export default { content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"], theme: { extend: {} }, plugins: [] }
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+})
 \`\`\`
 
 **File: \`user-auth-app/src/index.css\`**
 \`\`\`css
-@tailwind base; @tailwind components; @tailwind utilities;
+@import "tailwindcss";
 \`\`\`
 
 **File: \`user-auth-app/src/App.jsx\`**
 ...code...
 
-**Run: \`echo "Tailwind project ready!"\`**"
+**Run: \`echo "Tailwind v4 project ready!"\`**"
 
 
 ${currentFolder ? `Workspace: ${currentFolder}` : 'No folder open.'}

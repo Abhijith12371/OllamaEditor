@@ -20,7 +20,7 @@ export const EditorProvider = ({ children }) => {
     const [pendingCommand, setPendingCommand] = useState(null); // bridge for AI -> Terminal
     const [agentStatus, setAgentStatus] = useState(null); // 'thinking', 'applying', 'executing', 'fixing', null
     const [showPreview, setShowPreview] = useState(false);
-    const [previewUrl, setPreviewUrl] = useState('http://localhost:5173');
+    const [previewUrl, setPreviewUrl] = useState('http://localhost:5174');
 
     const executeCommand = useCallback((command) => {
         // Use an object with a unique ID so the same command can be re-run
@@ -124,13 +124,17 @@ export const EditorProvider = ({ children }) => {
     const openFile = async (path, name) => {
         if (!window.electronAPI) return;
 
-        // Check if already open
-        if (openFiles.some(f => f.path === path)) {
-            setActiveFile(path);
+        // Normalize path slashes for consistency
+        const normalizedPath = path.replace(/\//g, '\\');
+
+        // Check if already open (case-insensitive for Windows)
+        const isAlreadyOpen = openFiles.find(f => f.path.toLowerCase() === normalizedPath.toLowerCase());
+        if (isAlreadyOpen) {
+            setActiveFile(isAlreadyOpen.path);
             return;
         }
 
-        const result = await window.electronAPI.readFile(path);
+        const result = await window.electronAPI.readFile(normalizedPath);
         if (result.success) {
             const ext = name.split('.').pop().toLowerCase();
             const languageMap = {
@@ -145,15 +149,21 @@ export const EditorProvider = ({ children }) => {
             };
 
             const newFile = {
-                path,
+                path: normalizedPath,
                 name,
                 content: result.content,
                 language: languageMap[ext] || 'plaintext',
                 isDirty: false
             };
 
-            setOpenFiles(prev => [...prev, newFile]);
-            setActiveFile(path);
+            setOpenFiles(prev => {
+                // Double check inside functional update to avoid race conditions
+                if (prev.some(f => f.path.toLowerCase() === normalizedPath.toLowerCase())) {
+                    return prev;
+                }
+                return [...prev, newFile];
+            });
+            setActiveFile(normalizedPath);
         }
     };
 

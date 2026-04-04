@@ -44,6 +44,17 @@ const TerminalPanel = () => {
             }
 
             if (targetId && window.electronAPI?.terminalWrite) {
+                // Send Ctrl+C to interrupt any running process first
+                // Use triple Ctrl+C and follow with 'y' for Windows "Terminate batch job?" prompt
+                window.electronAPI.terminalWrite(targetId, '\x03\x03\x03');
+                await new Promise(res => setTimeout(res, 500));
+                window.electronAPI.terminalWrite(targetId, 'y\r');
+                await new Promise(res => setTimeout(res, 300));
+                // Send an empty newline to ensure we have a fresh prompt
+                window.electronAPI.terminalWrite(targetId, '\r');
+                await new Promise(res => setTimeout(res, 200));
+
+                // Send the actual command
                 window.electronAPI.terminalWrite(targetId, cmd + '\r');
             }
         };

@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, Sparkles, Code, FolderPlus, Copy, Check, RefreshCw, Trash2, Play, FileCode, CheckCircle2, XCircle, Terminal } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Bot, User, Loader2, Sparkles, Code, FolderPlus, Copy, Check, RefreshCw, Trash2, Play, FileCode, CheckCircle2, XCircle, Terminal, ImageIcon, X } from 'lucide-react';
 import { useEditor } from '../contexts/EditorContext';
 import clsx from 'clsx';
 
@@ -18,6 +18,7 @@ const AIChat = () => {
     const [createdFiles, setCreatedFiles] = useState([]);
     const [pendingTerminalFix, setPendingTerminalFix] = useState(false);
     const [autoPilot, setAutoPilot] = useState(false);
+    const [attachedImage, setAttachedImage] = useState(null); // { base64, mimeType, dataUrl }
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const lastSummaryRef = useRef(''); // Tracks what was just run to avoid loops
@@ -191,7 +192,7 @@ const AIChat = () => {
         clean = clean.replace(/^[\\/]+/, '');
 
         // 1. Try regex based on last command (fastest)
-        const createCmdMatch = lastCommandRef.current && lastCommandRef.current.match(/(?:create-react-app|vite|next-app|init)[\s@]+([a-zA-Z0-9_-]+)/i);
+        const createCmdMatch = lastCommandRef.current && lastCommandRef.current.match(/(?:create-react-app|vite|next-app|init)(?:@[^\s]+)?\s+([a-zA-Z0-9_-]+)/i);
         let confirmedProjectRoot = createCmdMatch ? createCmdMatch[1] : null;
 
         // 2. If no regex match, check File Tree for a single dominant folder
@@ -207,13 +208,21 @@ const AIChat = () => {
 
         // Apply redirection if we have a target folder and the file looks like it belongs there
         if (confirmedProjectRoot) {
-            // If checking for src/ or public/ or index.html at root
             const isRootFile = clean.startsWith('src/') || clean.startsWith('public/') || clean === 'index.html' || clean === 'vite.config.js' || clean === 'package.json';
+            const isStraySourceFile = !clean.includes('/') && /\.(jsx|css|js|ts|tsx)$/.test(clean) && !['vite.config.js', 'package.json', 'eslint.config.js', 'tailwind.config.js', 'postcss.config.js'].includes(clean);
 
-            if (!clean.startsWith(confirmedProjectRoot) && isRootFile) {
-                const redirected = `${confirmedProjectRoot}/${clean}`;
-                // console.log(`Auto-redirecting ${clean} -> ${redirected}`);
-                clean = redirected;
+            if (!clean.startsWith(confirmedProjectRoot)) {
+                if (isRootFile) {
+                    clean = `${confirmedProjectRoot}/${clean}`;
+                } else if (isStraySourceFile) {
+                    clean = `${confirmedProjectRoot}/src/${clean}`;
+                }
+            } else if (clean.startsWith(confirmedProjectRoot + '/') && !clean.includes('/src/') && !clean.includes('/public/')) {
+                // Check if it's placed sequentially after project root but missing src/ like "todo-app/App.jsx"
+                const subPath = clean.substring(confirmedProjectRoot.length + 1);
+                if (/\.(jsx|css|tsx)$/.test(subPath) && !['tailwind.config.js', 'postcss.config.js', 'eslint.config.js'].includes(subPath)) {
+                    clean = `${confirmedProjectRoot}/src/${subPath}`;
+                }
             }
         }
 
@@ -272,15 +281,49 @@ const AIChat = () => {
         }
     };
 
+    const fileInputRef = useRef(null);
     const lastAssistantResponseRef = useRef(''); // For loop detection
+
+    const processImageFile = (file) => {
+        if (!file || !file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUrl = e.target.result;
+            const base64 = dataUrl.split(',')[1];
+            setAttachedImage({ base64, mimeType: file.type, dataUrl });
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleImagePaste = useCallback((e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                processImageFile(item.getAsFile());
+                return;
+            }
+        }
+    }, []);
+
+    const handleImageDrop = useCallback((e) => {
+        e.preventDefault();
+        const file = e.dataTransfer?.files?.[0];
+        if (file) processImageFile(file);
+    }, []);
 
     const sendMessage = async (overrideContent = null) => {
         const contentToSend = overrideContent || input;
-        if (!contentToSend.trim() || isLoading) return;
+        if ((!contentToSend.trim() && !attachedImage) || isLoading) return;
 
-        const userMessage = { role: 'user', content: contentToSend };
+        const imageForMessage = attachedImage;
+        const userMessage = { role: 'user', content: contentToSend || '(image attached)', image: imageForMessage?.dataUrl };
         setMessages(prev => [...prev, userMessage]);
-        if (!overrideContent) setInput('');
+        if (!overrideContent) {
+            setInput('');
+            setAttachedImage(null);
+        }
 
         setIsLoading(true);
         // ONLY clear created files if this is a NEW task from user
@@ -300,15 +343,21 @@ const AIChat = () => {
             let systemPrompt = `You are an AUTONOMOUS CODING AGENT and SENIOR FRONTEND ENGINEER.
 You CREATE files and RUN commands yourself.
 
+WORKFLOW (STRICTLY FOLLOW THIS):
+When given a task to build a new project from scratch:
+1. PLAN: Output a brief technical PLAN detailing the architecture and approach.
+2. TODO: Output a clear TODO LIST of files and components to create.
+3. SCAFFOLD: Give the **Run:** command to scaffold the project (e.g. \`npm create vite...\`). DO NOT provide code files yet!
+Wait for the terminal to succeed, then in your NEXT turn, provide the code files.
+
 ━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL ENVIRONMENT RULES
 ━━━━━━━━━━━━━━━━━━━━━━
 - Project uses: Vite + React
 - DO NOT use Create React App or react-scripts
-- DO NOT use "npm start" -> Dev command is ALWAYS: "npm run dev"
-- OS: Windows (Use Powershell syntax)
-- Package manager: npm
 - Tech Stack: React 18 + Vite + Tailwind CSS
+- Preview Port: ALWAYS use 5174 (to avoid conflict with the editor)
+- Dev Command: \`npm run dev -- --port 5174\`
 
 ⚠️ IMPORT RULES (READ CAREFULLY):
 - ONLY import from REAL, INSTALLED packages.
@@ -338,18 +387,18 @@ ALLOWED PACKAGE VERSIONS (Use these if editing package.json):
 
 CRITICAL RULES FOR PROJECT CREATION:
 
-FOR REACT/NODE PROJECTS - USE A 2-STEP PROCESS:
-
 STEP 1: SCAFFOLD ONLY
-- Run the create command ONLY:
-  **Run: \`npm create vite@latest my-app -- --template react; cd my-app; npm install\`**
+- Run the create command ONLY. IMPORTANT: Replace <project-name> with a good, short name relevant to the user request. DO NOT name everything "todo-app"!
+  **Run: \`npm create vite@latest <project-name> -- --template react; cd <project-name>; npm install -D tailwindcss postcss autoprefixer; npx tailwindcss init -p; npm install; npm run dev -- --port 5174\`**
+- IMPORTANT: You MUST \`cd\` into the project folder BEFORE running any \`npm\` or \`ls\` commands.
 - DO NOT provide any files in this step
 - Wait for the command to finish
 
 STEP 2: MODIFY AFTER SUCCESS
 - Once the project is created, provide the modified files
-- IMPORTANT: If you created a subfolder (e.g. "todo-app"), ALL file paths MUST start with that folder name!
-- Example: **File: \`todo-app/src/App.jsx\`**
+- IMPORTANT: If you created a subfolder, ALL file paths MUST start with that folder name!
+- **CRITICAL**: You MUST provide \`tailwind.config.js\` and \`src/index.css\` (with @tailwind directives) to enable styling.
+- Example: **File: \`<project-name>/src/App.jsx\`**, **File: \`<project-name>/tailwind.config.js\`**
 
 FOR SIMPLE HTML/CSS/JS - CREATE FILES DIRECTLY:
 **File: \`index.html\`**
@@ -365,17 +414,28 @@ FORMAT RULES:
 5. CRITICAL: NEVER put terminal commands (npm, npx, cd, git) inside a **File:** code block. Always use **Run:** for commands.
 
 EXAMPLE - React App (Step 1):
-"I'll scaffold the project using Vite:
+"I'll scaffold the project using Vite and Tailwind CSS:
 
-**Run: \`npm create vite@latest todo-app -- --template react; cd todo-app; npm install; npm run dev\`**"
+**Run: \`npm create vite@latest user-auth-app -- --template react; cd user-auth-app; npm install -D tailwindcss postcss autoprefixer; npx tailwindcss init -p; npm install; npm run dev -- --port 5174\`**"
 
 EXAMPLE - React App (Step 2):
-"Now updating the App component:
+"Now updating the App component and Tailwind config:
 
-**File: \`todo-app/src/App.jsx\`**
+**File: \`user-auth-app/tailwind.config.js\`**
+\`\`\`javascript
+/** @type {import('tailwindcss').Config} */
+export default { content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"], theme: { extend: {} }, plugins: [] }
+\`\`\`
+
+**File: \`user-auth-app/src/index.css\`**
+\`\`\`css
+@tailwind base; @tailwind components; @tailwind utilities;
+\`\`\`
+
+**File: \`user-auth-app/src/App.jsx\`**
 ...code...
 
-**Run: \`echo "Updated App.jsx"\`**"
+**Run: \`echo "Tailwind project ready!"\`**"
 
 
 ${currentFolder ? `Workspace: ${currentFolder}` : 'No folder open.'}
@@ -425,7 +485,7 @@ export default App;
             // Route to different APIs based on model
             if (model.startsWith('gemini')) {
                 // Gemini API
-                const GEMINI_API_KEY = 'AIzaSyD4GuU_Hh_uucFedw71Al-xVi8j_8-5ojY';
+                const GEMINI_API_KEY = 'AIzaSyAxQr7-GZxrPxaZudC72qeHReZxvjrKFGg';
                 const geminiMessages = [
                     { role: 'user', parts: [{ text: systemPrompt }] },
                     { role: 'model', parts: [{ text: 'I understand. I am an autonomous coding agent and will follow these rules strictly.' }] },
@@ -457,39 +517,138 @@ export default App;
 
                 const geminiData = await geminiResponse.json();
                 content = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
-            } else {
-                // Ollama API
-                const response = await fetch('http://localhost:11434/api/chat', {
+            } else if (model.includes('/') && (model.startsWith('qwen/') || model.startsWith('openai/'))) {
+                const OPENROUTER_API_KEY = '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';
+                const orMessages = [
+                    { role: 'system', content: systemPrompt },
+                    ...chatHistory.filter(m => m.role !== 'system')
+                ];
+
+                const orResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${OPENROUTER_API_KEY}`
+                    },
                     body: JSON.stringify({
                         model: model,
-                        messages: [
-                            { role: 'system', content: systemPrompt },
-                            ...chatHistory.filter(m => m.role !== 'system').slice(-20)
-                        ],
-                        options: {
-                            temperature: 0.1, // Lower for more deterministic code
-                            top_p: 0.9,
-                            num_predict: 4096 // Ensure enough space for long UI code
-                        },
-                        stream: false
+                        messages: orMessages,
+                        temperature: 0.2
                     })
                 });
 
-                if (!response.ok) {
-                    let errorDetail = `Status: ${response.status}`;
-                    try {
-                        const errorJson = await response.json();
-                        if (errorJson.error) errorDetail = errorJson.error;
-                    } catch (e) {
-                        // Fallback if not JSON
-                    }
-                    throw new Error(errorDetail);
+                if (!orResponse.ok) {
+                    const errorData = await orResponse.json();
+                    throw new Error(`OpenRouter error: ${errorData.error?.message || orResponse.status}`);
                 }
 
-                const data = await response.json();
-                content = data.message?.content || 'Sorry, I could not generate a response.';
+                const orData = await orResponse.json();
+                content = orData.choices?.[0]?.message?.content || 'Sorry, I could not generate a response from OpenRouter.';
+            } else {
+                if (imageForMessage) {
+                    // ─── 2-STEP VISION PIPELINE ───────────────────────────────
+                    // Step 1: Ask llava to describe the image in detail
+                    setAgentStatus('thinking'); // show "working" indicator
+                    const describeResponse = await fetch('http://localhost:11434/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: 'llava:latest',
+                            messages: [{
+                                role: 'user',
+                                content: `Describe this UI screenshot in extreme detail. Include: layout structure, colors, fonts, spacing, all visible text, every component type (buttons, inputs, cards, navbars), icons, background, and the visual hierarchy. Be thorough — a developer will use your description to recreate this UI in code.\n\nUser instruction: ${contentToSend}`,
+                                images: [imageForMessage.base64]
+                            }],
+                            options: { temperature: 0.1 },
+                            stream: false
+                        })
+                    });
+
+                    if (!describeResponse.ok) {
+                        let detail = `llava error: ${describeResponse.status}`;
+                        try { const j = await describeResponse.json(); if (j.error) detail = j.error; } catch (e) { }
+                        throw new Error(detail);
+                    }
+                    const describeData = await describeResponse.json();
+                    const uiDescription = describeData.message?.content || '';
+
+                    // Step 2: Feed description to qwen2.5:7b-instruct for code generation
+                    const codeSystemPrompt = `You are an expert React + Tailwind CSS developer.
+You will receive a detailed description of a UI and must write the complete React code to recreate it.
+
+STRICT RULES:
+1. Output the FULL code immediately. Do NOT describe steps or explain.
+2. Use this EXACT format:
+**File: \`App.jsx\`**
+\`\`\`jsx
+...complete code...
+\`\`\`
+3. ONLY import from: react, react-dom, lucide-react, framer-motion. No other packages.
+4. Use Tailwind CSS classes for ALL styling.
+5. Make it pixel-perfect based on the description.
+6. Include all visible text, icons, colors, and layout.
+7. If no project exists, FIRST generate the code. If a project exists, update the App.jsx file in it.
+8. AT THE END, provide a **Run:** command to start the server if not already running (e.g., **Run: \`npm run dev -- --port 5174\`**).`;
+
+                    const codeResponse = await fetch('http://localhost:11434/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: 'qwen2.5:7b-instruct',
+                            messages: [
+                                { role: 'system', content: codeSystemPrompt },
+                                { role: 'user', content: `Here is the UI description:\n\n${uiDescription}\n\nUser instruction: ${contentToSend}\n\nWrite the complete React + Tailwind code now.` }
+                            ],
+                            options: { temperature: 0.1, num_predict: 4096 },
+                            stream: false
+                        })
+                    });
+
+                    if (!codeResponse.ok) {
+                        let detail = `qwen error: ${codeResponse.status}`;
+                        try { const j = await codeResponse.json(); if (j.error) detail = j.error; } catch (e) { }
+                        throw new Error(detail);
+                    }
+                    const codeData = await codeResponse.json();
+                    content = codeData.message?.content || 'Sorry, could not generate code.';
+                    setAgentStatus(null);
+
+                } else {
+                    // ─── NORMAL (NON-IMAGE) OLLAMA CALL ──────────────────────────
+                    const ollamaMessages = [
+                        { role: 'system', content: systemPrompt },
+                        ...chatHistory.filter(m => m.role !== 'system').slice(-20)
+                    ];
+
+                    const response = await fetch('http://localhost:11434/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: model,
+                            messages: ollamaMessages,
+                            options: {
+                                temperature: 0.1,
+                                top_p: 0.9,
+                                num_predict: 4096
+                            },
+                            stream: false
+                        })
+                    });
+
+                    if (!response.ok) {
+                        let errorDetail = `Status: ${response.status}`;
+                        try {
+                            const errorJson = await response.json();
+                            if (errorJson.error) errorDetail = errorJson.error;
+                        } catch (e) {
+                            // Fallback if not JSON
+                        }
+                        throw new Error(errorDetail);
+                    }
+
+                    const data = await response.json();
+                    content = data.message?.content || 'Sorry, I could not generate a response.';
+                } // end else (non-image)
             }
 
             // Pre-process content for Qwen UIGEN or similar models that use <|im_start|>ui
@@ -522,12 +681,23 @@ export default App;
             }
             lastAssistantResponseRef.current = content;
 
-            // Auto-create files ONLY if NOT in autoPilot. 
-            // In autoPilot, the central useEffect loop handles it with better tracking per message.
-            if (!autoPilot && files.length > 0 && currentFolder) {
-                setTimeout(async () => {
-                    await handleCreateAllFiles(files);
-                }, 500);
+            // If autoPilot is ON and this was a vision pipeline call, apply files directly here.
+            // The useEffect loop skips file application while isLoading=true, so we must handle it here.
+            if (files.length > 0 && currentFolder) {
+                if (autoPilot || imageForMessage) {
+                    setTimeout(async () => {
+                        await handleCreateAllFiles(files);
+                        // Pre-mark files as processed so the useEffect doesn't double-apply
+                        const msgIdx = messages.length; // index of the new assistant message
+                        files.forEach(f => {
+                            processedFilesRef.current.add(`${msgIdx}:${sanitizeFilename(f.filename)}`);
+                        });
+                    }, 500);
+                } else {
+                    setTimeout(async () => {
+                        await handleCreateAllFiles(files);
+                    }, 500);
+                }
             }
 
         } catch (error) {
@@ -568,6 +738,19 @@ export default App;
     // =====================================================
     // AUTONOMOUS AUTO-PILOT LOOPS (must be after all helper functions)
     // =====================================================
+
+    // Auto-detect Vite port from terminal output and update preview URL
+    useEffect(() => {
+        if (!terminalOutput) return;
+        // Vite prints: "Local:   http://localhost:5174/"
+        const portMatch = terminalOutput.match(/Local:\s+http:\/\/localhost:(\d+)/i);
+        if (portMatch) {
+            const detectedPort = portMatch[1];
+            const newUrl = `http://localhost:${detectedPort}`;
+            setPreviewUrl(newUrl);
+            setShowPreview(true); // auto-open preview when a dev server is detected
+        }
+    }, [terminalOutput, setPreviewUrl, setShowPreview]);
 
     // Autonomous Auto-Pilot Loop - applies files and runs commands
     useEffect(() => {
@@ -733,8 +916,31 @@ export default App;
 
         const hasError = errorKeywords.some(keyword => {
             const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-            return regex.test(terminalOutput);
+            const found = regex.test(terminalOutput);
+            if (found) {
+                // False positive filters: 
+                // 1. Ignore "y : The term 'y' is not recognized" (from our interrupt script)
+                if (terminalOutput.match(/y\s*:\s*(?:The term 'y' is|command not found)/i)) return false;
+
+                // 2. Ignore junk characters like [?25h
+                if (terminalOutput.match(/\[\?25[hl]/i) && !terminalOutput.toLowerCase().includes('error')) {
+                    return false;
+                }
+                return true;
+            }
+            return false;
         }) || (terminalOutput.includes('exited with code') && !terminalOutput.includes('exited with code 0'));
+
+        // DETECT WRONG DIRECTORY (package.json not found)
+        const isWrongDir = terminalOutput.includes('enoent Could not read package.json');
+        if (isWrongDir) {
+            lastProcessedOutputRef.current = outputSig;
+            setAgentStatus('fixing');
+            const correction = `ERROR: You are running an npm command in the WRONG FOLDER. I cannot find package.json in the current working directory.\n\nFILE STRUCTURE:\n${fileTree ? fileTree.map(f => f.name).join('\n') : 'Unknown'}\n\nPLEASE: Check which folder you created (e.g. "todo-app") and use **Run: \`cd folder-name; npm install\`** or similar.`;
+            setAgentStatus('thinking');
+            sendMessage(correction);
+            return;
+        }
 
         const successKeywords = [
             'Local:   http://localhost',
@@ -797,14 +1003,14 @@ export default App;
 
                 // DETECT PROJECT CREATION
                 let projectContextMsg = "";
-                const createMatch = lastCommandRef.current && lastCommandRef.current.match(/(?:create-react-app|vite|next-app|init)[\s@]+([a-zA-Z0-9_-]+)/i);
+                const createMatch = lastCommandRef.current && lastCommandRef.current.match(/(?:create-react-app|vite|next-app|init)(?:@[^\s]+)?\s+([a-zA-Z0-9_-]+)/i);
                 if (createMatch) {
                     const createdProject = createMatch[1];
                     refreshFileTree(); // Force verify files exist
                     projectContextMsg = `\n\n🚨 **CRITICAL: PROJECT CREATED** 🚨\nYou just created the folder "${createdProject}".\nYOU MUST WRITE ALL FILES INTO THIS FOLDER.\n\nCORRECT: **File: \`${createdProject}/src/App.jsx\`**\nWRONG: **File: \`src/App.jsx\`**`;
                 }
 
-                const successMsg = `Terminal indicates success:\n\`\`\`\n${terminalOutput.slice(-500)}\n\`\`\`\n\nIMPORTANT: If you just created a project, you MUST now perform STEP 2: Modify the files (App.jsx, etc.) to match the user's request. Provide the modified files using **File: \`path\`** format now.${projectContextMsg}\n\nIf the user's request is FULLY completed, say "Task Completed".`;
+                const successMsg = `Terminal indicates success:\n\`\`\`\n${terminalOutput.slice(-500)}\n\`\`\`\n\nIMPORTANT: If you just scaffolded a project, provide the code files for the website now (use the exact correct paths).${projectContextMsg}\n\nIf the user's request is FULLY completed, say "Task Completed".`;
                 setTerminalOutput('');
                 sendMessage(successMsg);
             } else {
@@ -843,6 +1049,15 @@ export default App;
                             </span>
                         )}
                     </div>
+
+                    {/* Attached image in user bubble */}
+                    {isUser && message.image && (
+                        <img
+                            src={message.image}
+                            alt="attached"
+                            className="max-w-[200px] max-h-[150px] rounded mb-2 border border-[#3c3c3c] object-contain"
+                        />
+                    )}
 
                     <div className="text-sm text-[#cccccc] space-y-2">
                         {parts.map((part, partIndex) => {
@@ -1008,6 +1223,11 @@ export default App;
                         onChange={(e) => setModel(e.target.value)}
                         className="bg-[#3c3c3c] text-[#cccccc] text-[10px] rounded px-1.5 py-1 outline-none border border-transparent focus:border-[#007acc]"
                     >
+                        <option value="gemini-1.5-pro">⚡ Gemini 1.5 Pro</option>
+                        <option value="gemini-1.5-flash">⚡ Gemini 1.5 Flash</option>
+                        <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash</option>
+                        <option value="qwen/qwen3.6-plus:free">🌐 OpenRouter Qwen 3.6 Plus (Free)</option>
+                        <option value="qwen/qwen3-coder:free">🌐 OpenRouter Qwen 3 Coder (Free)</option>
                         <option value="MHKetbi/UIGEN-T1-Qwen-7B:latest">MHKetbi/UIGEN-T1-Qwen-7B:latest</option>
                         <option value="llava:latest">llava:latest</option>
                         <option value="qwen2.5:7b-instruct">qwen2.5:7b-instruct</option>
@@ -1074,6 +1294,24 @@ export default App;
 
             {/* Input */}
             <div className="p-3 border-t border-[#1e1e1e] bg-[#252526] shrink-0">
+                {/* Image preview */}
+                {attachedImage && (
+                    <div className="mb-2 relative inline-block">
+                        <img
+                            src={attachedImage.dataUrl}
+                            alt="preview"
+                            className="h-16 w-auto rounded border border-[#007acc] object-contain"
+                        />
+                        <button
+                            className="absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-500 rounded-full p-0.5"
+                            onClick={() => setAttachedImage(null)}
+                            title="Remove image"
+                        >
+                            <X size={10} />
+                        </button>
+                        <span className="block text-[9px] text-blue-400 mt-0.5">→ llava:latest</span>
+                    </div>
+                )}
                 <div className="relative">
                     <textarea
                         ref={inputRef}
@@ -1086,24 +1324,43 @@ export default App;
                                 sendMessage();
                             }
                         }}
-                        placeholder={autoPilot ? "Agent is in Auto-Pilot mode..." : "Ask AI to build something..."}
-                        className="w-full bg-[#3c3c3c] text-[#cccccc] text-xs rounded p-2 pr-10 outline-none border border-transparent focus:border-[#007acc] resize-none custom-scrollbar"
+                        onPaste={handleImagePaste}
+                        onDrop={handleImageDrop}
+                        onDragOver={(e) => e.preventDefault()}
+                        placeholder={attachedImage ? 'Describe what you want the AI to do with this image...' : autoPilot ? 'Agent is in Auto-Pilot mode...' : 'Ask AI or paste/drop a screenshot...'}
+                        className="w-full bg-[#3c3c3c] text-[#cccccc] text-xs rounded p-2 pr-16 outline-none border border-transparent focus:border-[#007acc] resize-none custom-scrollbar"
                         disabled={isLoading}
                     />
-                    <button
-                        onClick={sendMessage}
-                        disabled={!input.trim() || isLoading}
-                        className="absolute right-2 bottom-2 p-1.5 bg-[#007acc] hover:bg-[#1177bb] disabled:bg-[#3c3c3c] disabled:text-[#888888] text-white rounded transition-colors"
-                    >
-                        {isLoading ? (
-                            <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                            <Send size={16} />
-                        )}
-                    </button>
+                    <div className="absolute right-2 bottom-2 flex gap-1">
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="p-1.5 hover:bg-[#4c4c4c] text-gray-400 hover:text-blue-400 rounded transition-colors"
+                            title="Attach image (or paste Ctrl+V)"
+                        >
+                            <ImageIcon size={14} />
+                        </button>
+                        <button
+                            onClick={sendMessage}
+                            disabled={(!input.trim() && !attachedImage) || isLoading}
+                            className="p-1.5 bg-[#007acc] hover:bg-[#1177bb] disabled:bg-[#3c3c3c] disabled:text-[#888888] text-white rounded transition-colors"
+                        >
+                            {isLoading ? (
+                                <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                                <Send size={16} />
+                            )}
+                        </button>
+                    </div>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => { if (e.target.files?.[0]) processImageFile(e.target.files[0]); e.target.value = ''; }}
+                    />
                 </div>
                 <div className="text-xs text-gray-600 mt-2 text-center">
-                    Files will be automatically created in your workspace
+                    📎 Paste or drop screenshots • Files auto-created in workspace
                 </div>
             </div>
         </div>
